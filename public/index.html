@@ -43,14 +43,14 @@ socket.on('state',s=>{S=s;t0=performance.now();const k=s.game&&s.game.round+':'+
 socket.on('left',()=>{localStorage.removeItem('duo');S=null;sel.clear();render()});
 socket.on('connect',()=>{const v=saved();if(v)socket.emit('room:rejoin',v,r=>{if(!r.ok){localStorage.removeItem('duo');}})});
 function enter(ev,d){socket.emit(ev,d,r=>{if(!r.ok){msg=r.error;render();return}save({code:r.code,token:r.token});history.replaceState(null,'','?room='+r.code)})}
-const name=()=>($('#name')?.value||'').trim()||'Player';
+const myName=()=>($('#name')?.value||'').trim()||'Player';
 const col=i=>`s${i}`;
 function home(){const pre=new URLSearchParams(location.search).get('room')||'';
  return `<h1>Duo Arcade</h1><p class="mute">Two players. One private room. Race to find words, then fight over a shared grid.</p>
  <div class="card"><label>Your name<input id="name" maxlength="16" placeholder="e.g. Sam"></label>
- <div class="row" style="margin-top:12px"><button onclick="enter('room:create',{name:name()})">Create room</button></div></div>
+ <div class="row" style="margin-top:12px"><button onclick="enter('room:create',{name:myName()})">Create room</button></div></div>
  <div class="card"><label>Room code<input id="code" value="${esc(pre)}" placeholder="WORD-7K2P" maxlength="9" style="text-transform:uppercase"></label>
- <div class="row" style="margin-top:12px"><button class="ghost" onclick="enter('room:join',{name:name(),code:$('#code').value})">Join room</button></div>
+ <div class="row" style="margin-top:12px"><button class="ghost" onclick="enter('room:join',{name:myName(),code:$('#code').value})">Join room</button></div>
  <div class="err">${esc(msg)}</div></div>
  <div class="games"><div class="card"><h3>Word Challenge</h3><p class="mute">One of you picks the first letter, the other the last. First valid word wins the round.</p></div>
  <div class="card"><h3>Task Grid</h3><p class="mute">Give each other tasks on an 8×8 board. Whoever claims the last cell wins.</p></div></div>`}
