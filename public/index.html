@@ -1,0 +1,100 @@
+<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Duo Arcade</title>
+<link href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:wght@500;800&family=Figtree:wght@400;600&display=swap" rel="stylesheet">
+<style>
+:root{--bg:#1a1530;--card:#261f45;--ink:#f4f0ff;--mute:#a79fc8;--p0:#ff6f91;--p1:#38d6e8;--gold:#ffc857;--r:18px}
+*{box-sizing:border-box}body{margin:0;background:radial-gradient(900px 500px at 50% -10%,#35285f,var(--bg));color:var(--ink);font:400 16px/1.45 Figtree,system-ui,sans-serif;min-height:100vh}
+main{max-width:760px;margin:0 auto;padding:20px 16px 60px}h1,h2,h3{font-family:'Bricolage Grotesque',system-ui,sans-serif;margin:.2em 0}
+h1{font-size:clamp(2.4rem,9vw,4.2rem);font-weight:800;letter-spacing:-.03em;line-height:1}
+.card{background:var(--card);border-radius:var(--r);padding:18px;margin:14px 0;box-shadow:0 8px 24px #0005}
+.row{display:flex;gap:10px;flex-wrap:wrap;align-items:center}.row>*{flex:1}
+input{width:100%;padding:12px 14px;border-radius:12px;border:2px solid #4a3f7a;background:#1a1530;color:var(--ink);font:inherit}
+button{cursor:pointer;border:0;border-radius:12px;padding:12px 16px;font:600 1rem Figtree,sans-serif;background:var(--gold);color:#241a00;transition:transform .12s}
+button:hover{transform:translateY(-1px)}button.ghost{background:#3a3162;color:var(--ink)}button:disabled{opacity:.45;cursor:default}
+:focus-visible{outline:3px solid var(--gold);outline-offset:2px}
+.players{display:grid;grid-template-columns:1fr 1fr;gap:12px}.pl{border-radius:var(--r);padding:14px;background:#1a1530;border:2px solid transparent}
+.pl.s0{border-color:var(--p0)}.pl.s1{border-color:var(--p1)}.pl.me::after{content:" (you)";color:var(--mute)}
+.dot{display:inline-block;width:10px;height:10px;border-radius:50%;background:#e55;margin-right:6px}.dot.on{background:#4ddc82}
+.mute{color:var(--mute)}.err{color:#ff8fa3;min-height:1.4em}
+.games{display:grid;grid-template-columns:1fr 1fr;gap:12px}@media(max-width:560px){.games{grid-template-columns:1fr}}
+.pop{animation:pop .35s}@keyframes pop{from{transform:scale(.85);opacity:0}}
+.big{font:800 clamp(2.4rem,12vw,4.5rem) 'Bricolage Grotesque',sans-serif;letter-spacing:.12em;text-align:center}
+.bar{height:8px;border-radius:8px;background:#1a1530;overflow:hidden}.bar i{display:block;height:100%;background:var(--gold)}
+.score{display:flex;justify-content:space-between;font:800 1.4rem 'Bricolage Grotesque'}.score .s0{color:var(--p0)}.score .s1{color:var(--p1)}
+.grid{display:grid;grid-template-columns:repeat(8,1fr);gap:clamp(3px,1vw,6px);width:100%;max-width:520px;margin:12px auto}
+.cell{aspect-ratio:1;padding:0;border-radius:8px;background:#352c5c;border:2px solid transparent;transition:all .18s}
+.cell.o0{background:var(--p0)}.cell.o1{background:var(--p1)}.cell.sel{border-color:var(--gold);transform:scale(.88);background:#5a4a96}
+.cell.new{animation:pop .5s}.cell.pend{border-color:var(--gold);border-style:dashed}
+.leg span{margin-right:14px}.leg b{display:inline-block;width:12px;height:12px;border-radius:3px;margin-right:5px}
+.toast{position:fixed;bottom:16px;left:50%;transform:translateX(-50%);background:#ff6f91;color:#2a0010;padding:10px 16px;border-radius:12px;font-weight:600;max-width:90vw}
+table{width:100%;border-collapse:collapse}td,th{padding:6px;text-align:left;border-bottom:1px solid #3a3162}
+@media(prefers-reduced-motion:reduce){*{animation:none!important;transition:none!important}}
+</style></head><body><main id="app" aria-live="polite"></main><div id="toast" class="toast" hidden></div>
+<script src="/socket.io/socket.io.js"></script>
+<script>
+const $=s=>document.querySelector(s), esc=s=>String(s).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+const socket=io(); let S=null, sel=new Set(), msg='', fb='', t0=0, lastKey='';
+const save=v=>localStorage.setItem('duo',JSON.stringify(v)), saved=()=>{try{return JSON.parse(localStorage.getItem('duo'))}catch{return null}};
+const go=(ev,d)=>socket.emit(ev,d||{});
+function toast(t){const e=$('#toast');e.textContent=t;e.hidden=false;clearTimeout(toast.t);toast.t=setTimeout(()=>e.hidden=true,2800)}
+socket.on('toast',toast); socket.on('feedback',f=>{fb=f.text;render()});
+socket.on('state',s=>{S=s;t0=performance.now();const k=s.game&&s.game.round+':'+s.game.phase;if(k!==lastKey){fb='';lastKey=k;}
+  if(s.game&&s.game.phase==='solve'||s.game&&s.game.phase==='setTask')sel=new Set(s.game.phase==='solve'?sel:[]);render()});
+socket.on('left',()=>{localStorage.removeItem('duo');S=null;sel.clear();render()});
+socket.on('connect',()=>{const v=saved();if(v)socket.emit('room:rejoin',v,r=>{if(!r.ok){localStorage.removeItem('duo');}})});
+function enter(ev,d){socket.emit(ev,d,r=>{if(!r.ok){msg=r.error;render();return}save({code:r.code,token:r.token});history.replaceState(null,'','?room='+r.code)})}
+const name=()=>($('#name')?.value||'').trim()||'Player';
+const col=i=>`s${i}`;
+function home(){const pre=new URLSearchParams(location.search).get('room')||'';
+ return `<h1>Duo Arcade</h1><p class="mute">Two players. One private room. Race to find words, then fight over a shared grid.</p>
+ <div class="card"><label>Your name<input id="name" maxlength="16" placeholder="e.g. Sam"></label>
+ <div class="row" style="margin-top:12px"><button onclick="enter('room:create',{name:name()})">Create room</button></div></div>
+ <div class="card"><label>Room code<input id="code" value="${esc(pre)}" placeholder="WORD-7K2P" maxlength="9" style="text-transform:uppercase"></label>
+ <div class="row" style="margin-top:12px"><button class="ghost" onclick="enter('room:join',{name:name(),code:$('#code').value})">Join room</button></div>
+ <div class="err">${esc(msg)}</div></div>
+ <div class="games"><div class="card"><h3>Word Challenge</h3><p class="mute">One of you picks the first letter, the other the last. First valid word wins the round.</p></div>
+ <div class="card"><h3>Task Grid</h3><p class="mute">Give each other tasks on an 8×8 board. Whoever claims the last cell wins.</p></div></div>`}
+function header(){const p=S.players;
+ return `<div class="row"><h2>Room ${S.code}</h2><button class="ghost" onclick="navigator.clipboard.writeText(S.code);toast('Code copied')">Copy code</button>
+ <button class="ghost" onclick="navigator.clipboard.writeText(location.origin+'/?room='+S.code);toast('Link copied')">Copy invite link</button>
+ <button class="ghost" onclick="go('leave')">Leave</button></div>
+ <div class="players">${[0,1].map(i=>p[i]?`<div class="pl s${i} ${S.you===i?'me':''}"><b>${esc(p[i].name)}</b><br><span class="mute"><span class="dot ${p[i].connected?'on':''}"></span>${p[i].connected?'Online':'Reconnecting…'} · ${p[i].ready?'Ready':'Not ready'}</span></div>`:`<div class="pl s${i} mute">Waiting for Player 2…<br>Share the code above.</div>`).join('')}</div>`}
+function lobby(){const pr=S.proposal,me=S.you;
+ const names={word:'Word Challenge',grid:'Task Grid'};
+ return `${S.phase==='waiting'?`<div class="card">Waiting for a second player. Send them the invite link.</div>`:`
+ <div class="card"><div class="row"><button onclick="go('ready')">${S.players[me].ready?'Not ready':"I'm ready"}</button></div></div>
+ ${pr?`<div class="card pop">${esc(S.players[pr.by].name)} picked <b>${names[pr.game]}</b>. ${pr.by===me?'Waiting for your friend to accept.':`<button onclick="go('accept')">Accept and start</button>`}<p class="mute">Both players must be ready to start.</p></div>`:''}
+ <div class="games">${['word','grid'].map(g=>`<div class="card"><h3>${names[g]}</h3><p class="mute">${g==='word'?'Letters in, words out. 5 rounds, 30 seconds each.':'Alternate tasks, claim cells, take the last one.'}</p><button class="ghost" onclick="go('propose',{game:'${g}'})">Pick this game</button></div>`).join('')}</div>`}`}
+function clock(){const g=S.game;if(!g||!g.msLeft)return'';const left=Math.max(0,g.msLeft-(performance.now()-t0));return `<div class="bar"><i id="bar" style="width:${Math.min(100,left/(g.phase==='play'?30000:20000)*100)}%"></i></div><p class="mute" id="clk">${(left/1000).toFixed(1)}s left${g.phase==='play'?' · elapsed '+((g.elapsed+performance.now()-t0)/1000).toFixed(1)+'s':''}</p>`}
+function scoreboard(){const g=S.game,p=S.players;return `<div class="score"><span class="s0">${esc(p[0].name)} ${g.scores[0]}</span><span class="mute">Round ${g.round}/${g.rounds}</span><span class="s1">${g.scores[1]} ${esc(p[1].name)}</span></div>`}
+function word(){const g=S.game;let body='';
+ if(g.phase==='letters'){body=g.mySubmitted?`<p>Locked in. Waiting for your friend…</p>`:`<p>You choose the <b>${g.role==='first'?'first':'last'}</b> letter.</p><div class="row"><input id="lt" maxlength="1" autofocus style="text-align:center;font-size:1.6rem" onkeydown="if(event.key==='Enter')lock()"><button onclick="lock()">Lock in</button></div>`}
+ else{const L=g.letters;body=`<div class="big pop">${L.first.toUpperCase()} _ _ _ ${L.last.toUpperCase()}</div>`+(g.phase==='play'?`<div class="row"><input id="ans" autocomplete="off" autocapitalize="none" placeholder="Type a word and press Enter" onkeydown="if(event.key==='Enter')ans()"><button onclick="ans()" style="flex:0">Submit</button></div><div class="err">${esc(fb)}</div>`:(()=>{const r=g.results.at(-1);return `<p class="pop"><b>${r.winner===null?'Draw. Nobody found a word.':esc(S.players[r.winner].name)+' wins with “'+esc(r.word)+'” in '+(r.ms/1000).toFixed(2)+'s'}</b></p>`})())}
+ return `<div class="card">${scoreboard()}${clock()}${body}</div>`}
+function lock(){go('word:letter',{letter:$('#lt').value})}
+function ans(){const i=$('#ans');go('word:answer',{word:i.value});i.focus()}
+function grid(){const g=S.game,me=S.you,P=S.players,mineSolve=g.solver===me,mineGive=g.giver===me;let panel='';
+ const last=new Set(g.lastMove?g.lastMove.cells:[]),pend=new Set(g.pending||[]);
+ if(g.phase==='setTask')panel=mineGive?`<p><b>Give ${esc(P[g.solver].name)} a task</b></p><div class="row"><select id="tk" style="padding:12px;border-radius:12px">${Object.entries(g.tasks).map(([k,v])=>`<option value="${k}">${esc(v)}</option>`).join('')}</select><button onclick="go('grid:task',{id:$('#tk').value})">Send task</button></div><div class="row" style="margin-top:10px"><input id="ct" maxlength="120" placeholder="…or invent your own (you approve the result)"><button class="ghost" onclick="go('grid:task',{text:$('#ct').value})">Send custom</button></div>`:`<p>${esc(P[g.giver].name)} is choosing your task…</p>`;
+ if(g.phase==='solve')panel=`<p class="pop">Task: <b>${esc(g.task.text)}</b>${g.task.id?'':' <span class="mute">(you approve)</span>'}</p>`+(mineSolve?`<button onclick="go('grid:submit',{cells:[...sel]})" ${sel.size?'':'disabled'}>Submit task (${sel.size})</button>`:`<p class="mute">${esc(P[g.solver].name)} is working on it…</p>`);
+ if(g.phase==='approve')panel=`<p>Task: <b>${esc(g.task.text)}</b></p>`+(mineGive?`<p>Cells outlined in gold. Did they do it?</p><div class="row"><button onclick="go('grid:review',{approve:true})">Approve</button><button class="ghost" onclick="go('grid:review',{approve:false})">Send back</button></div>`:`<p class="mute">Waiting for ${esc(P[g.giver].name)} to approve…</p>`);
+ const cells=g.owner.map((o,i)=>`<button class="cell ${o!==null?'o'+o:''} ${sel.has(i)?'sel':''} ${pend.has(i)?'pend':''} ${last.has(i)?'new':''}" aria-label="Cell ${i+1}${o!==null?', owned by '+esc(P[o].name):''}" ${o!==null||g.phase!=='solve'||!mineSolve?'disabled':''} onclick="tog(${i})"></button>`).join('');
+ const c=[0,1].map(i=>g.owner.filter(o=>o===i).length);
+ return `<div class="card"><div class="score"><span class="s0">${esc(P[0].name)} ${c[0]}</span><span class="mute">${64-c[0]-c[1]} left</span><span class="s1">${c[1]} ${esc(P[1].name)}</span></div>${panel}<div class="grid">${cells}</div>
+ <div class="leg mute"><span><b style="background:#352c5c"></b>Open</span><span><b style="background:var(--p0)"></b>${esc(P[0].name)}</span><span><b style="background:var(--p1)"></b>${esc(P[1].name)}</span></div></div>`}
+function tog(i){sel.has(i)?sel.delete(i):sel.add(i);render()}
+function results(){const g=S.game,P=S.players,voted=S.rematch.includes(S.you);let sum='';
+ if(g.type==='word'){const w=g.scores,win=w[0]===w[1]?'It\'s a tie':P[w[0]>w[1]?0:1].name+' wins';
+  const avg=i=>{const a=g.results.filter(r=>r.winner===i);return a.length?(a.reduce((x,r)=>x+r.ms,0)/a.length/1000).toFixed(2)+'s':'–'};
+  sum=`<h2>${esc(win)}! ${w[0]}–${w[1]}</h2><table><tr><th>Round</th><th>Letters</th><th>Winner</th><th>Word</th><th>Time</th></tr>${g.results.map(r=>`<tr><td>${r.round}</td><td>${r.first.toUpperCase()}…${r.last.toUpperCase()}</td><td>${r.winner===null?'Draw':esc(P[r.winner].name)}</td><td>${r.word?esc(r.word):'–'}</td><td>${r.ms?(r.ms/1000).toFixed(2)+'s':'–'}</td></tr>`).join('')}</table><p class="mute">Average winning time — ${esc(P[0].name)}: ${avg(0)} · ${esc(P[1].name)}: ${avg(1)}</p>`}
+ else{const c=[0,1].map(i=>g.owner.filter(o=>o===i).length);sum=`<h2>${esc(P[g.winner].name)} claimed the last cell and wins!</h2><p>${esc(P[0].name)}: ${c[0]} cells · ${esc(P[1].name)}: ${c[1]} cells</p><div class="grid">${g.owner.map(o=>`<div class="cell o${o}"></div>`).join('')}</div>`}
+ return `<div class="card pop">${sum}<div class="row"><button onclick="go('rematch')" ${voted?'disabled':''}>${voted?'Waiting for rematch…':'Play again'}</button><button class="ghost" onclick="go('lobby')">Back to lobby</button></div></div>`}
+function render(){const a=$('#app');if(document.activeElement&&['ans','name','code','lt','ct'].includes(document.activeElement.id)&&S&&S.game&&S.game.phase==='play'&&!$('#app').dataset.skip){}
+ const keep=document.activeElement&&document.activeElement.id==='ans'?document.activeElement.value:null;
+ if(!S){a.innerHTML=home();return}
+ a.innerHTML=header()+(S.phase==='waiting'||S.phase==='lobby'?lobby():S.phase==='results'?results():S.game.type==='word'?word():grid());
+ if(keep!==null&&$('#ans')){$('#ans').value=keep;$('#ans').focus()}}
+setInterval(()=>{if(S&&S.game&&S.game.msLeft&&(S.game.phase==='play'||S.game.phase==='letters')){const g=S.game,left=Math.max(0,g.msLeft-(performance.now()-t0)),b=$('#bar'),c=$('#clk');
+ if(b)b.style.width=Math.min(100,left/(g.phase==='play'?30000:20000)*100)+'%';if(c)c.textContent=(left/1000).toFixed(1)+'s left'+(g.phase==='play'?' · elapsed '+((g.elapsed+performance.now()-t0)/1000).toFixed(1)+'s':'')}},100);
+render();
+</script></body></html>
